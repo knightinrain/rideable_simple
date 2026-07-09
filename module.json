@@ -1,0 +1,26 @@
+{
+  "id": "rideable_simple",
+  "name": "rideable_simple",
+  "type": "module",
+  "title": "Rideable Simple",
+  "description": "A Foundry VTT v13 riding module with size-limited mounts, up to two riders, rider placement, following, HUD controls, and Rideable-compatible API aliases.",
+  "version": "0.3.1",
+  "url": "https://github.com/knightinrain/rideable_simple",
+  "manifest": "https://raw.githubusercontent.com/knightinrain/rideable_simple/main/module.json",
+  "download": "https://github.com/knightinrain/rideable_simple/archive/refs/heads/main.zip",
+  "authors": [
+    {
+      "name": "Codex for Cangfanjie"
+    }
+  ],
+  "compatibility": {
+    "minimum": "12",
+    "verified": "13"
+  },
+  "esmodules": [
+    "scripts/rideable_simple.js"
+  ],
+  "styles": [
+    "styles/rideable_simple.css"
+  ]
+}
