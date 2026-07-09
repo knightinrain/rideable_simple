@@ -39,6 +39,12 @@ function sceneOf(tokenDoc) {
   return tokenDoc?.parent ?? currentScene();
 }
 
+function sceneTokenDocs(scene) {
+  if (!scene?.tokens) return [];
+  if (typeof scene.tokens.filter === "function") return scene.tokens.filter(() => true);
+  return Array.from(scene.tokens.values?.() ?? scene.tokens ?? []).filter(Boolean);
+}
+
 function tokenById(scene, tokenId) {
   if (!scene || !tokenId) return null;
   return scene.tokens?.get(tokenId) ?? null;
@@ -175,9 +181,25 @@ async function clearMountFlag(tokenDoc) {
 
 function mountedRiders(mountDoc) {
   const scene = sceneOf(mountDoc);
-  return getRiderIds(mountDoc)
-    .map(id => tokenById(scene, id))
-    .filter(tokenDoc => tokenDoc && getMountFlag(tokenDoc)?.mountId === mountDoc.id);
+  const listed = getRiderIds(mountDoc).map(id => tokenById(scene, id)).filter(Boolean);
+  const scanned = sceneTokenDocs(scene).filter(tokenDoc => getMountFlag(tokenDoc)?.mountId === mountDoc?.id);
+  const byId = new Map();
+  for (const tokenDoc of [...listed, ...scanned]) {
+    if (tokenDoc && getMountFlag(tokenDoc)?.mountId === mountDoc?.id) byId.set(tokenDoc.id, tokenDoc);
+  }
+  return [...byId.values()];
+}
+
+async function reconcileRiderList(mountDoc, riders) {
+  if (!mountDoc) return;
+  const nextIds = riders.map(rider => rider.id);
+  const currentIds = getRiderIds(mountDoc);
+  if (nextIds.join("|") === currentIds.join("|")) return;
+  try {
+    await setRiderList(mountDoc, nextIds);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Could not repair rider list for ${mountDoc.name}`, err);
+  }
 }
 
 function riderMode(options = {}) {
@@ -320,6 +342,7 @@ async function syncRiderToMount(riderDoc, mountDoc, index = 0, count = 1, option
 
 async function syncMount(mountDoc) {
   const riders = mountedRiders(mountDoc);
+  await reconcileRiderList(mountDoc, riders);
   for (let i = 0; i < riders.length; i++) {
     await syncRiderToMount(riders[i], mountDoc, i, riders.length);
   }
@@ -490,7 +513,7 @@ async function setTokenConfig(tokenDoc, config = {}) {
 
 async function clearScene(scene = currentScene()) {
   if (!scene) return;
-  for (const tokenDoc of scene.tokens) {
+  for (const tokenDoc of sceneTokenDocs(scene)) {
     if (getMountFlag(tokenDoc)) {
       await clearMountFlag(tokenDoc);
       await removeRideEffects(tokenDoc);
@@ -503,7 +526,7 @@ async function clearScene(scene = currentScene()) {
 
 async function repairScene(scene = currentScene()) {
   if (!scene) return;
-  for (const tokenDoc of scene.tokens) {
+  for (const tokenDoc of sceneTokenDocs(scene)) {
     const mountFlag = getMountFlag(tokenDoc);
     if (!mountFlag?.mountId) continue;
     const mountDoc = tokenById(scene, mountFlag.mountId);
@@ -513,7 +536,7 @@ async function repairScene(scene = currentScene()) {
     }
     if (!getRiderIds(mountDoc).includes(tokenDoc.id)) await setRiderList(mountDoc, [...getRiderIds(mountDoc), tokenDoc.id]);
   }
-  for (const tokenDoc of scene.tokens) if (getRiderIds(tokenDoc).length) await syncMount(tokenDoc);
+  for (const tokenDoc of sceneTokenDocs(scene)) if (mountedRiders(tokenDoc).length) await syncMount(tokenDoc);
   ui.notifications?.info("Ride links resynced for the current scene.");
 }
 
@@ -536,7 +559,7 @@ async function stopFollowing(followerDoc) {
 async function syncFollowers(targetDoc) {
   if (!moduleSetting("enableFollowing", false)) return;
   const scene = sceneOf(targetDoc);
-  const followers = scene.tokens.filter(tokenDoc => tokenDoc.getFlag(MODULE_ID, FLAG_FOLLOW)?.targetId === targetDoc.id);
+  const followers = sceneTokenDocs(scene).filter(tokenDoc => tokenDoc.getFlag(MODULE_ID, FLAG_FOLLOW)?.targetId === targetDoc.id);
   const targetCenter = tokenCenter(targetDoc);
   for (let i = 0; i < followers.length; i++) {
     const follower = followers[i];
@@ -677,6 +700,22 @@ function activateRideLinkApi() {
   console.log(`${MODULE_ID} | Rideable Simple ready`);
 }
 
+async function onTokenUpdate(tokenDoc, changes, options = {}) {
+  if (options?.[MODULE_ID]?.syncing || options?.[MODULE_ID]?.dismounting || options?.[MODULE_ID]?.following || options?.[MODULE_ID]?.movingMount) return;
+  const changedPosition = "x" in changes || "y" in changes || "elevation" in changes || "rotation" in changes;
+  if (!changedPosition) return;
+
+  if (mountedRiders(tokenDoc).length) {
+    await syncMount(tokenDoc);
+    scheduleMountSync(tokenDoc);
+    await syncFollowers(tokenDoc);
+    return;
+  }
+
+  if (getMountFlag(tokenDoc)?.mountId) await handleIndependentRiderMovement(tokenDoc, changes, options);
+  await syncFollowers(tokenDoc);
+}
+
 Hooks.once("init", registerSettings);
 if (game?.ready) activateRideLinkApi();
 else Hooks.once("ready", activateRideLinkApi);
@@ -689,20 +728,8 @@ Hooks.on("renderTokenHUD", (hud, html) => {
   addTokenHudButton(html, "Unmount all riders", "fas fa-users-slash", () => unmountAllRiders(tokenDoc));
 });
 
-Hooks.on("updateToken", async (tokenDoc, changes, options) => {
-  if (options?.[MODULE_ID]?.syncing || options?.[MODULE_ID]?.dismounting || options?.[MODULE_ID]?.following || options?.[MODULE_ID]?.movingMount) return;
-  const changedPosition = "x" in changes || "y" in changes || "elevation" in changes || "rotation" in changes;
-  if (!changedPosition) return;
-
-  if (mountedRiders(tokenDoc).length) {
-    scheduleMountSync(tokenDoc);
-    await syncFollowers(tokenDoc);
-    return;
-  }
-
-  if (getMountFlag(tokenDoc)?.mountId) await handleIndependentRiderMovement(tokenDoc, changes, options);
-  await syncFollowers(tokenDoc);
-});
+Hooks.on("updateToken", onTokenUpdate);
+Hooks.on("updateTokenDocument", onTokenUpdate);
 
 Hooks.on("deleteToken", async tokenDoc => {
   const scene = sceneOf(tokenDoc);
@@ -718,8 +745,8 @@ Hooks.on("deleteToken", async tokenDoc => {
 });
 
 Hooks.on("canvasReady", () => {
-  for (const tokenDoc of canvas.scene?.tokens ?? []) {
-    if (getRiderIds(tokenDoc).length) scheduleMountSync(tokenDoc);
+  for (const tokenDoc of sceneTokenDocs(canvas.scene)) {
+    if (mountedRiders(tokenDoc).length) scheduleMountSync(tokenDoc);
   }
 });
 
