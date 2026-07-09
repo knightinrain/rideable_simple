@@ -73,7 +73,7 @@ The `When rider moves independently` setting controls what happens when a mounte
 - `Dismount`: remove the riding link.
 - `Move mount`: move the mount by the same x/y distance as the rider's attempted move.
 
-Version `0.3.2` fixes the `Move mount` behavior so it uses the rider's actual token movement instead of stale stored coordinates.
+Version `0.3.3` repairs mount movement follow-up by checking both sides of the riding link: the mount's rider list and each rider token's mounted flag. If an older scene has a stale mount rider list, moving the mount or running scene repair now rebuilds the list before syncing riders.
 
 ## API
 
@@ -118,6 +118,7 @@ After enabling the module in a world, verify these points with temporary tokens 
 - Test the configured size rule with one valid and one invalid pair.
 - If using `Move mount`, move the rider and confirm the mount moves by the same distance.
 - Reload the scene and run scene repair if needed.
+- For an existing broken riding pair, dismount and mount again, or run `game.rideableSimple.repairScene()` once, then move the mount to verify the rider follows.
 
 ## Notes
 
