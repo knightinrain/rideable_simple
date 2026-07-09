@@ -102,7 +102,10 @@ function tokenSizeRank(tokenDoc) {
 function validMountSize(riderDoc, mountDoc) {
   if (!moduleSetting("enforceSizeRestriction", true)) return true;
   const requiredDifference = Number(moduleSetting("requiredSizeDifference", 1) ?? 1);
-  return tokenSizeRank(mountDoc) - tokenSizeRank(riderDoc) === requiredDifference;
+  if (requiredDifference <= 0) return true;
+  const difference = tokenSizeRank(mountDoc) - tokenSizeRank(riderDoc);
+  const rule = moduleSetting("sizeRule", "atLeast");
+  return rule === "exact" ? difference === requiredDifference : difference >= requiredDifference;
 }
 
 function distanceBetween(a, b) {
@@ -303,9 +306,14 @@ async function syncRiderToMount(riderDoc, mountDoc, index = 0, count = 1, option
   }
 
   await riderDoc.update(next, { animate: false, animation: { duration: 0 }, [MODULE_ID]: { syncing: true } });
-  if (!freeMove) {
-    const currentMountFlag = getMountFlag(riderDoc);
-    if (currentMountFlag?.mountId === mountDoc.id) await riderDoc.setFlag(MODULE_ID, FLAG_MOUNT, { ...currentMountFlag, offset });
+  const currentMountFlag = getMountFlag(riderDoc);
+  if (currentMountFlag?.mountId === mountDoc.id) {
+    await riderDoc.setFlag(MODULE_ID, FLAG_MOUNT, {
+      ...currentMountFlag,
+      offset,
+      lastX: riderDoc.x,
+      lastY: riderDoc.y
+    });
   }
   return true;
 }
@@ -366,7 +374,9 @@ async function mountRider(riderDoc, mountDoc, options = {}) {
       y: riderDoc.y,
       elevation: riderDoc.elevation ?? 0,
       rotation: riderDoc.rotation ?? 0
-    }
+    },
+    lastX: riderDoc.x,
+    lastY: riderDoc.y
   });
 
   await setRiderList(mountDoc, [...getRiderIds(mountDoc), riderDoc.id]);
@@ -560,7 +570,9 @@ async function handleIndependentRiderMovement(riderDoc, changes, options) {
       await freshRider.setFlag(MODULE_ID, FLAG_MOUNT, {
         ...freshFlag,
         freeMove: true,
-        offset: { x: riderCenter.x - mountCenter.x, y: riderCenter.y - mountCenter.y }
+        offset: { x: riderCenter.x - mountCenter.x, y: riderCenter.y - mountCenter.y },
+        lastX: freshRider.x,
+        lastY: freshRider.y
       });
     }, 100);
     return;
@@ -577,9 +589,10 @@ async function handleIndependentRiderMovement(riderDoc, changes, options) {
   }
 
   if (behavior === "moveMount" || mountFlag.piloting) {
-    const dx = Number(changes.x ?? riderDoc.x) - Number(mountFlag.lastX ?? mountDoc.x);
-    const dy = Number(changes.y ?? riderDoc.y) - Number(mountFlag.lastY ?? mountDoc.y);
+    const dx = Number(changes.x ?? riderDoc.x) - Number(riderDoc.x ?? 0);
+    const dy = Number(changes.y ?? riderDoc.y) - Number(riderDoc.y ?? 0);
     await mountDoc.update({ x: Number(mountDoc.x ?? 0) + dx, y: Number(mountDoc.y ?? 0) + dy }, { [MODULE_ID]: { movingMount: true } });
+    await riderDoc.setFlag(MODULE_ID, FLAG_MOUNT, { ...mountFlag, lastX: changes.x ?? riderDoc.x, lastY: changes.y ?? riderDoc.y });
     scheduleMountSync(mountDoc);
   }
 }
@@ -604,7 +617,8 @@ function registerSettings() {
   const register = (key, data) => game.settings.register(MODULE_ID, key, { scope: "world", config: true, ...data });
   register("rideableByDefault", { name: "Default all tokens rideable", hint: "When disabled, tokens must be marked rideable through API or token flags.", type: Boolean, default: true });
   register("enforceSizeRestriction", { name: "Enforce size restriction", hint: "When enabled, riders can only mount tokens that match the configured size difference.", type: Boolean, default: true });
-  register("requiredSizeDifference", { name: "Required mount size difference", hint: "1 means the mount must be exactly one size category larger than the rider.", type: Number, default: 1, range: { min: 0, max: 5, step: 1 } });
+  register("requiredSizeDifference", { name: "Required mount size difference", hint: "1 means the mount must be at least one size category larger by default.", type: Number, default: 1, range: { min: 0, max: 5, step: 1 } });
+  register("sizeRule", { name: "Size rule mode", hint: "At least is more permissive; exact keeps the older strict behavior.", type: String, choices: { atLeast: "At least the required difference", exact: "Exactly the required difference" }, default: "atLeast" });
   register("maxRiders", { name: "Maximum riders per mount", hint: "0 means unlimited riders. Default is 2.", type: Number, default: 2, range: { min: 0, max: 8, step: 1 } });
   register("riderPlacement", { name: "Rider placement", type: String, choices: { center: "Center", row: "Row", circle: "Circle" }, default: "circle" });
   register("riderElevationOffset", { name: "Rider elevation offset", hint: "Rider elevation equals mount elevation plus this value and any extra height.", type: Number, default: 1, range: { min: 0, max: 20, step: 1 } });
