@@ -2,9 +2,9 @@
   "id": "rideable_simple",
   "name": "rideable_simple",
   "type": "module",
-  "title": "Rideable Simple",
-  "description": "A Foundry VTT v13 riding module with size-limited mounts, up to two riders, rider placement, following, HUD controls, and Rideable-compatible API aliases.",
-  "version": "0.3.5",
+  "title": "简易骑乘系统",
+  "description": "为 Foundry VTT 提供轻量骑乘功能：骑上、下马、骑手跟随、相邻格下马、尺寸限制、HUD 控制、跟随与 Rideable 兼容 API。",
+  "version": "0.3.6",
   "url": "https://github.com/knightinrain/rideable_simple",
   "manifest": "https://raw.githubusercontent.com/knightinrain/rideable_simple/main/module.json",
   "download": "https://github.com/knightinrain/rideable_simple/archive/refs/heads/main.zip",
@@ -18,7 +18,8 @@
     "verified": "13"
   },
   "esmodules": [
-    "scripts/rideable_simple.js"
+    "scripts/rideable_simple.js",
+    "scripts/rideable_simple_zh.js"
   ],
   "styles": [
     "styles/rideable_simple.css"
