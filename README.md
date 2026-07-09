@@ -37,6 +37,7 @@ The current manifest uses GitHub's branch zip as the download target. If Foundry
 - Dismount all riders from a mount.
 - Add Token HUD buttons for GM use.
 - Keep riders positioned on the mount when the mount moves.
+- Place a dismounted rider into an adjacent square beside the mount.
 - Supports center, row, and circle rider placement.
 - Optional rider elevation, rotation sync, and rider scale.
 - Optional following behavior.
@@ -74,6 +75,8 @@ The `When rider moves independently` setting controls what happens when a mounte
 - `Move mount`: move the mount by the same x/y distance as the rider's attempted move.
 
 Version `0.3.3` repairs mount movement follow-up by checking both sides of the riding link: the mount's rider list and each rider token's mounted flag. If an older scene has a stale mount rider list, moving the mount or running scene repair now rebuilds the list before syncing riders.
+
+Version `0.3.4` changes dismount placement. When a rider dismounts, the module chooses a grid square in the one-square ring around the mount's occupied space. It prefers the closest unoccupied square and only falls back to the first adjacent square if all nearby positions are blocked.
 
 ## API
 
@@ -113,7 +116,7 @@ After enabling the module in a world, verify these points with temporary tokens 
 - Select a rider token and target one mount token.
 - Mount the rider and confirm the rider receives the mounted effect.
 - Move the mount and confirm the rider follows.
-- Dismount the rider and confirm the effect is removed.
+- Dismount the rider and confirm the rider appears in an adjacent square beside the mount.
 - Try the Token HUD mount and unmount controls as GM.
 - Test the configured size rule with one valid and one invalid pair.
 - If using `Move mount`, move the rider and confirm the mount moves by the same distance.
