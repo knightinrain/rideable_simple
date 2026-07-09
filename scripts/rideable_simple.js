@@ -406,8 +406,8 @@ async function syncRiderToMount(riderDoc, mountDoc, index = 0, count = 1, option
     await riderDoc.setFlag(MODULE_ID, FLAG_MOUNT, {
       ...currentMountFlag,
       offset,
-      lastX: riderDoc.x,
-      lastY: riderDoc.y
+      lastX: next.x,
+      lastY: next.y
     });
   }
   return true;
@@ -640,6 +640,14 @@ async function syncFollowers(targetDoc) {
   }
 }
 
+function movementDeltaFromFlag(riderDoc, changes, mountFlag) {
+  const previousX = Number(mountFlag.lastX ?? riderDoc.x ?? changes.x ?? 0);
+  const previousY = Number(mountFlag.lastY ?? riderDoc.y ?? changes.y ?? 0);
+  const nextX = Number(changes.x ?? riderDoc.x ?? previousX);
+  const nextY = Number(changes.y ?? riderDoc.y ?? previousY);
+  return { dx: nextX - previousX, dy: nextY - previousY, nextX, nextY };
+}
+
 async function handleIndependentRiderMovement(riderDoc, changes, options) {
   const mountFlag = getMountFlag(riderDoc);
   if (!mountFlag?.mountId) return;
@@ -681,10 +689,11 @@ async function handleIndependentRiderMovement(riderDoc, changes, options) {
   }
 
   if (behavior === "moveMount" || mountFlag.piloting) {
-    const dx = Number(changes.x ?? riderDoc.x) - Number(riderDoc.x ?? 0);
-    const dy = Number(changes.y ?? riderDoc.y) - Number(riderDoc.y ?? 0);
-    await mountDoc.update({ x: Number(mountDoc.x ?? 0) + dx, y: Number(mountDoc.y ?? 0) + dy }, { [MODULE_ID]: { movingMount: true } });
-    await riderDoc.setFlag(MODULE_ID, FLAG_MOUNT, { ...mountFlag, lastX: changes.x ?? riderDoc.x, lastY: changes.y ?? riderDoc.y });
+    const { dx, dy, nextX, nextY } = movementDeltaFromFlag(riderDoc, changes, mountFlag);
+    if (dx || dy) {
+      await mountDoc.update({ x: Number(mountDoc.x ?? 0) + dx, y: Number(mountDoc.y ?? 0) + dy }, { [MODULE_ID]: { movingMount: true } });
+    }
+    await riderDoc.setFlag(MODULE_ID, FLAG_MOUNT, { ...mountFlag, lastX: nextX, lastY: nextY });
     scheduleMountSync(mountDoc);
   }
 }
