@@ -74,9 +74,13 @@ The `When rider moves independently` setting controls what happens when a mounte
 - `Dismount`: remove the riding link.
 - `Move mount`: move the mount by the same x/y distance as the rider's attempted move.
 
+For tables where the rider should always use the mount's tactical movement, set `When rider moves independently` to `Move mount` or `Return to seat`. `Move mount` lets dragging the rider move the mount by the same distance; `Return to seat` makes the mount token the only movement token.
+
 Version `0.3.3` repairs mount movement follow-up by checking both sides of the riding link: the mount's rider list and each rider token's mounted flag. If an older scene has a stale mount rider list, moving the mount or running scene repair now rebuilds the list before syncing riders.
 
 Version `0.3.4` changes dismount placement. When a rider dismounts, the module chooses a grid square in the one-square ring around the mount's occupied space. It prefers the closest unoccupied square and only falls back to the first adjacent square if all nearby positions are blocked.
+
+Version `0.3.5` fixes rider-driven mount movement. When `Move mount` or piloting is active, the module now compares the rider's target position against the last stored rider position, so it does not lose movement distance if Foundry has already updated the token document before the hook runs.
 
 ## API
 
@@ -117,9 +121,9 @@ After enabling the module in a world, verify these points with temporary tokens 
 - Mount the rider and confirm the rider receives the mounted effect.
 - Move the mount and confirm the rider follows.
 - Dismount the rider and confirm the rider appears in an adjacent square beside the mount.
+- Set `When rider moves independently` to `Move mount`, move the rider, and confirm the mount moves by the same distance.
 - Try the Token HUD mount and unmount controls as GM.
 - Test the configured size rule with one valid and one invalid pair.
-- If using `Move mount`, move the rider and confirm the mount moves by the same distance.
 - Reload the scene and run scene repair if needed.
 - For an existing broken riding pair, dismount and mount again, or run `game.rideableSimple.repairScene()` once, then move the mount to verify the rider follows.
 
