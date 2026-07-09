@@ -31,6 +31,22 @@ function topLeftFromCenter(tokenDoc, center) {
   };
 }
 
+function tokenBoundsAt(tokenDoc, position = {}) {
+  const size = gridSize();
+  const x = Number(position.x ?? tokenDoc?.x ?? 0);
+  const y = Number(position.y ?? tokenDoc?.y ?? 0);
+  return {
+    left: x,
+    top: y,
+    right: x + Number(tokenDoc?.width ?? 1) * size,
+    bottom: y + Number(tokenDoc?.height ?? 1) * size
+  };
+}
+
+function boundsOverlap(a, b) {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+}
+
 function currentScene() {
   return canvas?.scene ?? game?.scenes?.active ?? null;
 }
@@ -263,6 +279,63 @@ function mountHeight(mountDoc, riderDoc, mountFlag = {}) {
   return Number(mountDoc.elevation ?? 0) + base + Number(mountFlag.extraHeight ?? 0);
 }
 
+function dismountCandidates(mountDoc, riderDoc) {
+  const size = gridSize();
+  const mountCol = Math.round(Number(mountDoc.x ?? 0) / size);
+  const mountRow = Math.round(Number(mountDoc.y ?? 0) / size);
+  const mountCols = Math.max(1, Math.ceil(Number(mountDoc.width ?? 1)));
+  const mountRows = Math.max(1, Math.ceil(Number(mountDoc.height ?? 1)));
+  const riderCols = Math.max(1, Math.ceil(Number(riderDoc.width ?? 1)));
+  const riderRows = Math.max(1, Math.ceil(Number(riderDoc.height ?? 1)));
+  const leftCol = mountCol - riderCols;
+  const rightCol = mountCol + mountCols;
+  const topRow = mountRow - riderRows;
+  const bottomRow = mountRow + mountRows;
+  const seen = new Set();
+  const add = (col, row) => {
+    const key = `${col},${row}`;
+    if (!seen.has(key)) seen.add(key);
+  };
+
+  for (let col = leftCol; col <= rightCol; col++) {
+    add(col, topRow);
+    add(col, bottomRow);
+  }
+  for (let row = topRow; row <= bottomRow; row++) {
+    add(leftCol, row);
+    add(rightCol, row);
+  }
+
+  const riderCenter = tokenCenter(riderDoc);
+  return [...seen].map(key => {
+    const [col, row] = key.split(",").map(Number);
+    const x = col * size;
+    const y = row * size;
+    const center = {
+      x: x + Number(riderDoc.width ?? 1) * size / 2,
+      y: y + Number(riderDoc.height ?? 1) * size / 2
+    };
+    return { x, y, distance: Math.hypot(center.x - riderCenter.x, center.y - riderCenter.y) };
+  }).sort((a, b) => a.distance - b.distance);
+}
+
+function candidateIsOpen(scene, riderDoc, candidate) {
+  const proposed = tokenBoundsAt(riderDoc, candidate);
+  return !sceneTokenDocs(scene).some(tokenDoc => {
+    if (!tokenDoc || tokenDoc.id === riderDoc.id) return false;
+    return boundsOverlap(proposed, tokenBoundsAt(tokenDoc));
+  });
+}
+
+function dismountDestination(mountDoc, riderDoc) {
+  const scene = sceneOf(riderDoc);
+  const candidates = dismountCandidates(mountDoc, riderDoc);
+  return candidates.find(candidate => candidateIsOpen(scene, riderDoc, candidate)) ?? candidates[0] ?? {
+    x: Number(mountDoc.x ?? 0) + Number(mountDoc.width ?? 1) * gridSize(),
+    y: Number(mountDoc.y ?? 0)
+  };
+}
+
 async function applyRideEffect(riderDoc, mode) {
   const shouldApply = mode === "grappled"
     ? moduleSetting("applyGrappledEffect", true)
@@ -422,12 +495,8 @@ async function dismountRider(riderDoc, options = {}) {
   await removeRideEffects(riderDoc);
 
   if (options.placeBeside !== false && mountDoc) {
-    const size = gridSize();
-    const next = {
-      x: Math.round(Number(mountDoc.x ?? 0) + Number(mountDoc.width ?? 1) * size + size / 4),
-      y: Math.round(Number(mountDoc.y ?? 0)),
-      elevation: mountDoc.elevation ?? riderDoc.elevation ?? 0
-    };
+    const next = dismountDestination(mountDoc, riderDoc);
+    next.elevation = mountDoc.elevation ?? riderDoc.elevation ?? 0;
     await riderDoc.update(next, { [MODULE_ID]: { dismounting: true } });
   }
 
